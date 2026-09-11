@@ -1,0 +1,6 @@
+node_modules/
+.env
+*.log
+
+# Archivos locales de VS Code
+.vscode/
