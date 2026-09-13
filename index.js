@@ -42,6 +42,54 @@ app.get('/usuarios', (req, res) => {
     });
 });
 
+app.get('/usuarios/resumen', (req, res) => {
+    const { fechaInicio, fechaFin } = req.query;
+    const ventasFiltro = [];
+    const movimientosFiltro = [];
+    const ventasParams = [];
+    const movimientosParams = [];
+
+    if (fechaInicio) {
+        ventasFiltro.push('v.fecha_venta >= ?');
+        ventasParams.push(fechaInicio);
+        movimientosFiltro.push('fecha_moviemiento >= ?');
+        movimientosParams.push(fechaInicio);
+    }
+    if (fechaFin) {
+        ventasFiltro.push('v.fecha_venta <= ?');
+        ventasParams.push(fechaFin);
+        movimientosFiltro.push('fecha_moviemiento <= ?');
+        movimientosParams.push(fechaFin);
+    }
+
+    const ventasCondicion = ventasFiltro.length ? ` AND ${ventasFiltro.join(' AND ')}` : '';
+    const movimientosCondicion = movimientosFiltro.length ? ` WHERE ${movimientosFiltro.join(' AND ')}` : '';
+    const sql = `
+        SELECT u.usuario,
+            COALESCE(SUM(v.precio_venta - v.precio_compra), 0) AS ganancia,
+            COALESCE(SUM(v.precio_venta), 0) AS total_ventas,
+            COALESCE(m.total_movimientos, 0) AS total_movimientos,
+            COALESCE(SUM(v.precio_venta), 0) - COALESCE(m.total_movimientos, 0) AS total_al_dia
+        FROM cat_usuarios u
+        LEFT JOIN tb_juguetes_detalle v ON v.usuario = u.usuario${ventasCondicion}
+        LEFT JOIN (
+            SELECT usuario, SUM(movimiento) AS total_movimientos
+            FROM tb_movimientos
+            ${movimientosCondicion}
+            GROUP BY usuario
+        ) m ON m.usuario = u.usuario
+        GROUP BY u.usuario, m.total_movimientos
+        ORDER BY u.usuario`;
+
+    db.query(sql, [...ventasParams, ...movimientosParams], (err, result) => {
+        if (err) {
+            console.error("Error consultando resumen de usuarios:", err.message);
+            return res.status(500).json({ error: "Error consultando resumen de usuarios" });
+        }
+        res.json(result);
+    });
+});
+
 app.post('/usuarios', (req, res) => {
     const { usuario } = req.body;
     db.query('INSERT INTO cat_usuarios (usuario) VALUES (?)', [usuario], (err) => {
@@ -50,6 +98,39 @@ app.post('/usuarios', (req, res) => {
             res.status(500).json({ error: "Error agregando usuario" });
         }
         else res.json({ message: "Usuario agregado" });
+    });
+});
+
+app.put('/usuarios/:usuario', (req, res) => {
+    const usuarioActual = req.params.usuario;
+    const { usuario: usuarioNuevo } = req.body;
+
+    if (!usuarioActual || !usuarioNuevo || !usuarioNuevo.trim()) {
+        return res.status(400).json({ error: "El nombre de usuario es obligatorio" });
+    }
+
+    const nombreNuevo = usuarioNuevo.trim();
+    db.beginTransaction(err => {
+        if (err) return res.status(500).json({ error: "No se pudo iniciar la actualización" });
+
+        db.query('UPDATE cat_usuarios SET usuario = ? WHERE usuario = ?', [nombreNuevo, usuarioActual], (catalogoError, resultado) => {
+            if (catalogoError || !resultado.affectedRows) {
+                return db.rollback(() => res.status(catalogoError ? 500 : 404).json({ error: catalogoError ? "No se pudo actualizar el usuario" : "Usuario no encontrado" }));
+            }
+
+            db.query('UPDATE tb_juguetes_detalle SET usuario = ? WHERE usuario = ?', [nombreNuevo, usuarioActual], ventasError => {
+                if (ventasError) return db.rollback(() => res.status(500).json({ error: "No se pudieron actualizar las ventas del usuario" }));
+
+                db.query('UPDATE tb_movimientos SET usuario = ? WHERE usuario = ?', [nombreNuevo, usuarioActual], movimientosError => {
+                    if (movimientosError) return db.rollback(() => res.status(500).json({ error: "No se pudieron actualizar los movimientos del usuario" }));
+
+                    db.commit(commitError => {
+                        if (commitError) return db.rollback(() => res.status(500).json({ error: "No se pudo confirmar la actualización" }));
+                        res.json({ message: "Usuario actualizado" });
+                    });
+                });
+            });
+        });
     });
 });
 

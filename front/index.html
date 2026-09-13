@@ -31,6 +31,9 @@
             <li class="nav-item">
                 <button class="nav-link" :class="{ active: vistaActual === 'gastos' }" @click="cambiarVista('gastos')">Gastos</button>
             </li>
+            <li class="nav-item">
+                <button class="nav-link" :class="{ active: vistaActual === 'administracion' }" @click="cambiarVista('administracion')">Administración</button>
+            </li>
         </ul>
 
         <div v-if="vistaActual === 'ventas'" class="row">
@@ -41,7 +44,7 @@
                     <div class="card-body bg-white">
                         <div class="mb-2">
                             <label class="form-label small">Fecha:</label>
-                            <input type="date" v-model="nuevaVenta.fecha_venta" class="form-control mb-2">
+                            <input ref="fechaVentaInput" type="text" v-model="nuevaVenta.fecha_venta" class="form-control mb-2" placeholder="Selecciona fecha">
                             
                             <label class="form-label small">Vendedor:</label>
                             <select v-model="nuevaVenta.usuario" class="form-select mb-2">
@@ -73,16 +76,6 @@
                     </div>
                 </div>
 
-                <!-- Gestión Usuarios -->
-                <div class="card shadow-sm border-0">
-                    <div class="card-header bg-dark text-white">Usuarios</div>
-                    <div class="card-body bg-white py-2">
-                        <div class="input-group input-group-sm">
-                            <input type="text" v-model="nuevoUsuarioNombre" class="form-control" placeholder="Nombre...">
-                            <button @click="crearUsuario" class="btn btn-primary">Añadir</button>
-                        </div>
-                    </div>
-                </div>
             </div>
 
             <!-- Listado y Sumatoria -->
@@ -143,7 +136,7 @@
             </div>
         </div>
 
-        <div v-else class="row">
+        <div v-else-if="vistaActual === 'gastos'" class="row">
             <div class="col-md-4">
                 <div class="card shadow-sm mb-4 border-0">
                     <div class="card-header bg-danger text-white">Capturar Gasto</div>
@@ -278,6 +271,88 @@
                 </div>
             </div>
         </div>
+
+        <div v-else class="row">
+            <div class="col-md-4">
+                <div class="card shadow-sm mb-4 border-0">
+                    <div class="card-header bg-dark text-white">Registrar usuario</div>
+                    <div class="card-body bg-white">
+                        <label class="form-label small">Nombre del usuario:</label>
+                        <input type="text" v-model.trim="nuevoUsuarioNombre" @keyup.enter="crearUsuario" class="form-control mb-3" placeholder="Ej. Daniel">
+                        <button @click="crearUsuario" class="btn btn-primary w-100 fw-bold">REGISTRAR USUARIO</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-8">
+                <div class="card shadow-sm p-3 mb-3 border-0 bg-white">
+                    <div class="row align-items-end g-2">
+                        <div class="col-md-4">
+                            <label class="xsmall fw-bold">Desde:</label>
+                            <input ref="fechaUsuariosInicioInput" type="text" v-model="filtroUsuarios.fechaInicio" class="form-control form-control-sm" placeholder="Selecciona fecha">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="xsmall fw-bold">Hasta:</label>
+                            <input ref="fechaUsuariosFinInput" type="text" v-model="filtroUsuarios.fechaFin" class="form-control form-control-sm" placeholder="Selecciona fecha">
+                        </div>
+                        <div class="col-md-4 text-md-end">
+                            <button @click="limpiarFiltroUsuarios" class="btn btn-sm btn-outline-secondary">Limpiar fechas</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                        <span>Usuarios registrados</span>
+                        <span class="badge text-bg-light">{{resumenUsuarios.length}}</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center border-bottom bg-light px-3 py-2">
+                        <span class="small fw-bold">Total de todos los usuarios al día</span>
+                        <span class="fw-bold fs-5" :class="totalUsuariosAlDia >= 0 ? 'text-success' : 'text-danger'">{{formatearMoneda(totalUsuariosAlDia)}}</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center border-bottom bg-white px-3 py-2">
+                        <span class="small fw-bold">Total de todos los usuarios sin movimientos</span>
+                        <span class="fw-bold fs-5 text-primary">{{formatearMoneda(totalUsuariosSinMovimientos)}}</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Usuario</th>
+                                    <th>Ganancia</th>
+                                    <th>Total de movimientos</th>
+                                    <th class="text-end">Total al día</th>
+                                    <th class="text-end">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="usuario in resumenUsuarios" :key="usuario.usuario">
+                                    <template v-if="usuarioEditando === usuario.usuario">
+                                        <td><input type="text" v-model.trim="nombreUsuarioEdicion" class="form-control form-control-sm"></td>
+                                        <td class="text-success">{{formatearMoneda(usuario.ganancia)}}</td>
+                                        <td class="text-muted">{{formatearMoneda(usuario.total_movimientos)}}</td>
+                                        <td class="fw-bold text-end">{{formatearMoneda(usuario.total_al_dia)}}</td>
+                                        <td class="text-end">
+                                            <button @click="actualizarUsuario" class="btn btn-sm btn-success me-1">Guardar</button>
+                                            <button @click="cancelarEdicionUsuario" class="btn btn-sm btn-outline-secondary">Cancelar</button>
+                                        </td>
+                                    </template>
+                                    <template v-else>
+                                        <td class="fw-bold">{{usuario.usuario}}</td>
+                                        <td class="text-success">{{formatearMoneda(usuario.ganancia)}}</td>
+                                        <td class="text-muted">{{formatearMoneda(usuario.total_movimientos)}}</td>
+                                        <td class="fw-bold text-end" :class="Number(usuario.total_al_dia) >= 0 ? 'text-success' : 'text-danger'">{{formatearMoneda(usuario.total_al_dia)}}</td>
+                                        <td class="text-end"><button @click="editarUsuario(usuario)" class="btn btn-sm btn-outline-primary">Editar</button></td>
+                                    </template>
+                                </tr>
+                                <tr v-if="!resumenUsuarios.length">
+                                    <td colspan="5" class="text-center text-muted py-4">No hay usuarios registrados</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -287,13 +362,18 @@
                 return {
                     vistaActual: 'ventas',
                     usuarios: [],
+                    resumenUsuarios: [],
                     ventas: [],
                     movimientos: [],
                     fechasConVentas: [],
                     fechasConMovimientos: [],
                     calendarios: [],
+                    calendarioVenta: null,
                     calendariosMovimientos: [],
+                    calendariosUsuarios: [],
                     nuevoUsuarioNombre: '',
+                    usuarioEditando: null,
+                    nombreUsuarioEdicion: '',
                     usuariosMovimientoSeleccionados: [],
                     nuevoMovimiento: {
                         gastoPlaza: 0,
@@ -309,6 +389,7 @@
                     },
                     filtro: { fechaInicio: '', fechaFin: '', usuario: '' },
                     filtroMovimientos: { fechaInicio: '', fechaFin: '', usuario: '', tipoMovimiento: '' },
+                    filtroUsuarios: { fechaInicio: '', fechaFin: '' },
                     coloresExtra: ['#fd7e14', '#20c997', '#0dcaf0', '#6610f2', '#adb5bd']
                 }
             },
@@ -320,6 +401,12 @@
                 totalMovimientosFiltrados() {
                     const total = this.movimientos.reduce((acc, movimiento) => acc + parseFloat(movimiento.movimiento || 0), 0);
                     return total.toLocaleString('en-US', { minimumFractionDigits: 2 });
+                },
+                totalUsuariosAlDia() {
+                    return this.resumenUsuarios.reduce((total, usuario) => total + Number(usuario.total_al_dia || 0), 0);
+                },
+                totalUsuariosSinMovimientos() {
+                    return this.resumenUsuarios.reduce((total, usuario) => total + Number(usuario.total_ventas || 0), 0);
                 },
                 usuariosConMovimiento() {
                     return [...new Set(this.movimientos.map(movimiento => movimiento.usuario).filter(Boolean))];
@@ -353,6 +440,12 @@
             methods: {
                 cambiarVista(vista) {
                     this.vistaActual = vista;
+                    if (vista === 'administracion') {
+                        this.$nextTick(() => {
+                            this.inicializarCalendariosUsuarios();
+                            this.obtenerResumenUsuarios();
+                        });
+                    }
                     if (vista === 'gastos') {
                         this.$nextTick(() => {
                             this.inicializarCalendariosMovimientos();
@@ -374,6 +467,7 @@
 
                 actualizarDiasConVenta() {
                     this.calendarios.forEach(calendario => calendario.redraw());
+                    if (this.calendarioVenta) this.calendarioVenta.redraw();
                 },
 
                 actualizarDiasConMovimiento() {
@@ -401,6 +495,21 @@
                         flatpickr(this.$refs.fechaInicioInput, opciones('fechaInicio')),
                         flatpickr(this.$refs.fechaFinInput, opciones('fechaFin'))
                     ];
+
+                    this.calendarioVenta = flatpickr(this.$refs.fechaVentaInput, {
+                        locale: flatpickr.l10ns.es,
+                        dateFormat: 'Y-m-d',
+                        defaultDate: this.nuevaVenta.fecha_venta,
+                        onDayCreate: (_dias, _fecha, _instancia, dia) => {
+                            if (this.fechasConVentas.includes(this.fechaComoClave(dia.dateObj))) {
+                                dia.classList.add('con-venta');
+                                dia.title = 'Hay ventas registradas este día';
+                            }
+                        },
+                        onChange: (_fechas, fechaTexto) => {
+                            this.nuevaVenta.fecha_venta = fechaTexto;
+                        }
+                    });
                 },
 
                 inicializarCalendariosMovimientos() {
@@ -425,6 +534,25 @@
                     this.calendariosMovimientos = [
                         flatpickr(this.$refs.fechaMovimientoInicioInput, opciones('fechaInicio')),
                         flatpickr(this.$refs.fechaMovimientoFinInput, opciones('fechaFin'))
+                    ];
+                },
+
+                inicializarCalendariosUsuarios() {
+                    if (this.calendariosUsuarios.length || !this.$refs.fechaUsuariosInicioInput) return;
+
+                    const opciones = campo => ({
+                        locale: flatpickr.l10ns.es,
+                        dateFormat: 'Y-m-d',
+                        allowInput: true,
+                        onChange: (_fechas, fechaTexto) => {
+                            this.filtroUsuarios[campo] = fechaTexto;
+                            this.obtenerResumenUsuarios();
+                        }
+                    });
+
+                    this.calendariosUsuarios = [
+                        flatpickr(this.$refs.fechaUsuariosInicioInput, opciones('fechaInicio')),
+                        flatpickr(this.$refs.fechaUsuariosFinInput, opciones('fechaFin'))
                     ];
                 },
 
@@ -459,11 +587,58 @@
                     this.usuarios = res.data;
                 },
 
+                async obtenerResumenUsuarios() {
+                    const res = await axios.get('http://localhost:3001/usuarios/resumen', { params: this.filtroUsuarios });
+                    this.resumenUsuarios = res.data;
+                },
+
+                limpiarFiltroUsuarios() {
+                    this.filtroUsuarios.fechaInicio = '';
+                    this.filtroUsuarios.fechaFin = '';
+                    this.calendariosUsuarios.forEach(calendario => calendario.clear());
+                    this.obtenerResumenUsuarios();
+                },
+
+                formatearMoneda(valor) {
+                    return `$ ${Number(valor || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                },
+
                 async crearUsuario() {
-                    if(!this.nuevoUsuarioNombre) return;
-                    await axios.post('http://localhost:3001/usuarios', { usuario: this.nuevoUsuarioNombre });
-                    this.nuevoUsuarioNombre = '';
-                    this.obtenerUsuarios();
+                    if (!this.nuevoUsuarioNombre) return alert('Escribe un nombre de usuario');
+                    try {
+                        await axios.post('http://localhost:3001/usuarios', { usuario: this.nuevoUsuarioNombre });
+                        this.nuevoUsuarioNombre = '';
+                        await this.obtenerUsuarios();
+                        await this.obtenerResumenUsuarios();
+                    } catch (e) {
+                        console.error(e);
+                        alert(e.response?.data?.error || 'No se pudo registrar el usuario');
+                    }
+                },
+
+                editarUsuario(usuario) {
+                    this.usuarioEditando = usuario.usuario;
+                    this.nombreUsuarioEdicion = usuario.usuario;
+                },
+
+                cancelarEdicionUsuario() {
+                    this.usuarioEditando = null;
+                    this.nombreUsuarioEdicion = '';
+                },
+
+                async actualizarUsuario() {
+                    if (!this.nombreUsuarioEdicion || !this.usuarioEditando) return alert('Escribe un nombre de usuario');
+                    try {
+                        await axios.put(`http://localhost:3001/usuarios/${encodeURIComponent(this.usuarioEditando)}`, {
+                            usuario: this.nombreUsuarioEdicion
+                        });
+                        this.cancelarEdicionUsuario();
+                        await this.obtenerUsuarios();
+                        await this.obtenerResumenUsuarios();
+                    } catch (e) {
+                        console.error(e);
+                        alert(e.response?.data?.error || 'No se pudo actualizar el usuario');
+                    }
                 },
 
                 async obtenerVentas() {
@@ -502,6 +677,7 @@
                             usuarios: this.usuariosMovimientoSeleccionados
                         });
                         await this.obtenerMovimientos();
+                        await this.obtenerResumenUsuarios();
                         this.nuevoMovimiento.gastoPlaza = 0;
                         this.nuevoMovimiento.gastoGasolina = 0;
                         this.usuariosMovimientoSeleccionados = [];
@@ -519,7 +695,9 @@
                     
                     try {
                         await axios.post('http://localhost:3001/ventas', this.nuevaVenta);
-                        this.obtenerVentas();
+                        await this.obtenerVentas();
+                        await this.obtenerFechasConVentas();
+                        await this.obtenerResumenUsuarios();
                         
                         // Limpiar campos
                         this.nuevaVenta.nombre_juguete = '';
@@ -540,6 +718,7 @@
             mounted() {
                 this.inicializarCalendarios();
                 this.obtenerUsuarios();
+                this.obtenerResumenUsuarios();
                 this.obtenerVentas();
                 this.obtenerFechasConVentas();
                 this.obtenerMovimientos();
