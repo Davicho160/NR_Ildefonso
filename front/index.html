@@ -18,6 +18,7 @@
         .flatpickr-day.con-venta:hover, .flatpickr-day.con-venta.selected { background: radial-gradient(circle, #146c43 0 11px, transparent 11.5px); color: white; }
         .flatpickr-day.con-movimiento { background: radial-gradient(circle, #dc3545 0 11px, transparent 11.5px); color: white; font-weight: bold; }
         .flatpickr-day.con-movimiento:hover, .flatpickr-day.con-movimiento.selected { background: radial-gradient(circle, #b02a37 0 11px, transparent 11.5px); color: white; }
+        .flatpickr-day.con-venta.con-movimiento { background: radial-gradient(circle at 35% 50%, #198754 0 7px, transparent 7.5px), radial-gradient(circle at 65% 50%, #dc3545 0 7px, transparent 7.5px); }
     </style>
 </head>
 <body class="bg-light">
@@ -240,7 +241,7 @@
                     </div>
                     <div v-for="usuario in usuariosConMovimiento" :key="`resumen-${usuario}`" class="d-flex justify-content-between border-top py-2 small">
                         <span>{{usuario}}</span>
-                        <span class="fw-bold text-danger">$ {{montoDivididoFiltrado}}</span>
+                        <span class="fw-bold text-danger">$ {{montoPorUsuarioFiltrado(usuario)}}</span>
                     </div>
                 </div>
 
@@ -319,6 +320,7 @@
                                 <tr>
                                     <th>Usuario</th>
                                     <th>Ganancia</th>
+                                    <th>Total sin movimientos</th>
                                     <th>Total de movimientos</th>
                                     <th class="text-end">Total al día</th>
                                     <th class="text-end">Acciones</th>
@@ -329,6 +331,7 @@
                                     <template v-if="usuarioEditando === usuario.usuario">
                                         <td><input type="text" v-model.trim="nombreUsuarioEdicion" class="form-control form-control-sm"></td>
                                         <td class="text-success">{{formatearMoneda(usuario.ganancia)}}</td>
+                                        <td class="text-primary">{{formatearMoneda(usuario.total_ventas)}}</td>
                                         <td class="text-muted">{{formatearMoneda(usuario.total_movimientos)}}</td>
                                         <td class="fw-bold text-end">{{formatearMoneda(usuario.total_al_dia)}}</td>
                                         <td class="text-end">
@@ -339,13 +342,14 @@
                                     <template v-else>
                                         <td class="fw-bold">{{usuario.usuario}}</td>
                                         <td class="text-success">{{formatearMoneda(usuario.ganancia)}}</td>
+                                        <td class="text-primary">{{formatearMoneda(usuario.total_ventas)}}</td>
                                         <td class="text-muted">{{formatearMoneda(usuario.total_movimientos)}}</td>
                                         <td class="fw-bold text-end" :class="Number(usuario.total_al_dia) >= 0 ? 'text-success' : 'text-danger'">{{formatearMoneda(usuario.total_al_dia)}}</td>
                                         <td class="text-end"><button @click="editarUsuario(usuario)" class="btn btn-sm btn-outline-primary">Editar</button></td>
                                     </template>
                                 </tr>
                                 <tr v-if="!resumenUsuarios.length">
-                                    <td colspan="5" class="text-center text-muted py-4">No hay usuarios registrados</td>
+                                    <td colspan="6" class="text-center text-muted py-4">No hay usuarios registrados</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -411,12 +415,6 @@
                 usuariosConMovimiento() {
                     return [...new Set(this.movimientos.map(movimiento => movimiento.usuario).filter(Boolean))];
                 },
-                montoDivididoFiltrado() {
-                    const cantidad = this.usuariosConMovimiento.length;
-                    if (!cantidad) return '0.00';
-                    const total = this.movimientos.reduce((acc, movimiento) => acc + parseFloat(movimiento.movimiento || 0), 0);
-                    return (total / cantidad).toLocaleString('en-US', { minimumFractionDigits: 2 });
-                },
                 totalGastos() {
                     return ((Number(this.nuevoMovimiento.gastoPlaza) || 0) + (Number(this.nuevoMovimiento.gastoGasolina) || 0)).toFixed(2);
                 },
@@ -440,6 +438,13 @@
             methods: {
                 cambiarVista(vista) {
                     this.vistaActual = vista;
+                    if (vista === 'ventas') {
+                        this.$nextTick(() => {
+                            if (!this.$refs.fechaInicioInput?._flatpickr || !this.$refs.fechaFinInput?._flatpickr || !this.$refs.fechaVentaInput?._flatpickr) this.inicializarCalendarios();
+                            this.obtenerFechasConVentas();
+                            this.obtenerFechasConMovimientos();
+                        });
+                    }
                     if (vista === 'administracion') {
                         this.$nextTick(() => {
                             this.inicializarCalendariosUsuarios();
@@ -468,22 +473,32 @@
                 actualizarDiasConVenta() {
                     this.calendarios.forEach(calendario => calendario.redraw());
                     if (this.calendarioVenta) this.calendarioVenta.redraw();
+                    this.calendariosUsuarios.forEach(calendario => calendario.redraw());
                 },
 
                 actualizarDiasConMovimiento() {
                     this.calendariosMovimientos.forEach(calendario => calendario.redraw());
+                    if (this.calendarioVenta) this.calendarioVenta.redraw();
+                    this.calendariosUsuarios.forEach(calendario => calendario.redraw());
                 },
 
                 inicializarCalendarios() {
+                    if (!this.$refs.fechaInicioInput || !this.$refs.fechaFinInput || !this.$refs.fechaVentaInput) return;
                     const opciones = (campo) => ({
                         locale: flatpickr.l10ns.es,
                         dateFormat: 'Y-m-d',
                         allowInput: true,
                         onDayCreate: (_dias, _fecha, _instancia, dia) => {
-                            if (this.fechasConVentas.includes(this.fechaComoClave(dia.dateObj))) {
+                            const fecha = this.fechaComoClave(dia.dateObj);
+                            const tieneVenta = this.fechasConVentas.includes(fecha);
+                            const tieneMovimiento = this.fechasConMovimientos.includes(fecha);
+                            if (tieneVenta) {
                                 dia.classList.add('con-venta');
-                                dia.title = 'Hay ventas registradas este día';
                             }
+                            if (tieneMovimiento) dia.classList.add('con-movimiento');
+                            if (tieneVenta && tieneMovimiento) dia.title = 'Hay ventas y movimientos registrados este día';
+                            else if (tieneVenta) dia.title = 'Hay ventas registradas este día';
+                            else if (tieneMovimiento) dia.title = 'Hay movimientos registrados este día';
                         },
                         onChange: (fechas, fechaTexto) => {
                             this.filtro[campo] = fechaTexto;
@@ -491,20 +506,26 @@
                         }
                     });
 
-                    this.calendarios = [
-                        flatpickr(this.$refs.fechaInicioInput, opciones('fechaInicio')),
-                        flatpickr(this.$refs.fechaFinInput, opciones('fechaFin'))
-                    ];
+                    if (!this.$refs.fechaInicioInput._flatpickr || !this.$refs.fechaFinInput._flatpickr) {
+                        this.calendarios = [
+                            flatpickr(this.$refs.fechaInicioInput, opciones('fechaInicio')),
+                            flatpickr(this.$refs.fechaFinInput, opciones('fechaFin'))
+                        ];
+                    }
 
-                    this.calendarioVenta = flatpickr(this.$refs.fechaVentaInput, {
+                    if (!this.$refs.fechaVentaInput._flatpickr) this.calendarioVenta = flatpickr(this.$refs.fechaVentaInput, {
                         locale: flatpickr.l10ns.es,
                         dateFormat: 'Y-m-d',
                         defaultDate: this.nuevaVenta.fecha_venta,
                         onDayCreate: (_dias, _fecha, _instancia, dia) => {
-                            if (this.fechasConVentas.includes(this.fechaComoClave(dia.dateObj))) {
-                                dia.classList.add('con-venta');
-                                dia.title = 'Hay ventas registradas este día';
-                            }
+                            const fecha = this.fechaComoClave(dia.dateObj);
+                            const tieneVenta = this.fechasConVentas.includes(fecha);
+                            const tieneMovimiento = this.fechasConMovimientos.includes(fecha);
+                            if (tieneVenta) dia.classList.add('con-venta');
+                            if (tieneMovimiento) dia.classList.add('con-movimiento');
+                            if (tieneVenta && tieneMovimiento) dia.title = 'Hay ventas y movimientos registrados este día';
+                            else if (tieneVenta) dia.title = 'Hay ventas registradas este día';
+                            else if (tieneMovimiento) dia.title = 'Hay movimientos registrados este día';
                         },
                         onChange: (_fechas, fechaTexto) => {
                             this.nuevaVenta.fecha_venta = fechaTexto;
@@ -513,7 +534,8 @@
                 },
 
                 inicializarCalendariosMovimientos() {
-                    if (this.calendariosMovimientos.length || !this.$refs.fechaMovimientoInicioInput) return;
+                    if (!this.$refs.fechaMovimientoInicioInput || !this.$refs.fechaMovimientoFinInput) return;
+                    if (this.$refs.fechaMovimientoInicioInput._flatpickr && this.$refs.fechaMovimientoFinInput._flatpickr) return;
 
                     const opciones = (campo) => ({
                         locale: flatpickr.l10ns.es,
@@ -538,12 +560,23 @@
                 },
 
                 inicializarCalendariosUsuarios() {
-                    if (this.calendariosUsuarios.length || !this.$refs.fechaUsuariosInicioInput) return;
+                    if (!this.$refs.fechaUsuariosInicioInput || !this.$refs.fechaUsuariosFinInput) return;
+                    if (this.$refs.fechaUsuariosInicioInput._flatpickr && this.$refs.fechaUsuariosFinInput._flatpickr) return;
 
                     const opciones = campo => ({
                         locale: flatpickr.l10ns.es,
                         dateFormat: 'Y-m-d',
                         allowInput: true,
+                        onDayCreate: (_dias, _fecha, _instancia, dia) => {
+                            const fecha = this.fechaComoClave(dia.dateObj);
+                            const tieneVenta = this.fechasConVentas.includes(fecha);
+                            const tieneMovimiento = this.fechasConMovimientos.includes(fecha);
+                            if (tieneVenta) dia.classList.add('con-venta');
+                            if (tieneMovimiento) dia.classList.add('con-movimiento');
+                            if (tieneVenta && tieneMovimiento) dia.title = 'Hay ventas y movimientos registrados este día';
+                            else if (tieneVenta) dia.title = 'Hay ventas registradas este día';
+                            else if (tieneMovimiento) dia.title = 'Hay movimientos registrados este día';
+                        },
                         onChange: (_fechas, fechaTexto) => {
                             this.filtroUsuarios[campo] = fechaTexto;
                             this.obtenerResumenUsuarios();
@@ -601,6 +634,13 @@
 
                 formatearMoneda(valor) {
                     return `$ ${Number(valor || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                },
+
+                montoPorUsuarioFiltrado(usuario) {
+                    const total = this.movimientos
+                        .filter(movimiento => movimiento.usuario === usuario)
+                        .reduce((acumulado, movimiento) => acumulado + Number(movimiento.movimiento || 0), 0);
+                    return total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 },
 
                 async crearUsuario() {
@@ -677,6 +717,7 @@
                             usuarios: this.usuariosMovimientoSeleccionados
                         });
                         await this.obtenerMovimientos();
+                        await this.obtenerFechasConMovimientos();
                         await this.obtenerResumenUsuarios();
                         this.nuevoMovimiento.gastoPlaza = 0;
                         this.nuevoMovimiento.gastoGasolina = 0;
@@ -716,12 +757,13 @@
                 formatearFecha(fechaStr) { return fechaStr ? fechaStr.split('T')[0] : ''; }
             },
             mounted() {
-                this.inicializarCalendarios();
+                this.$nextTick(() => this.inicializarCalendarios());
                 this.obtenerUsuarios();
                 this.obtenerResumenUsuarios();
                 this.obtenerVentas();
                 this.obtenerFechasConVentas();
                 this.obtenerMovimientos();
+                this.obtenerFechasConMovimientos();
             }
         }).mount('#app')
     </script>

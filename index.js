@@ -17,23 +17,43 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-const db = mysql.createConnection({
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: true } : undefined
-});
+let db;
+let reconexionEnCurso = false;
 
-db.connect(err => { 
-    if (err) {
+function conectarBaseDatos() {
+    if (reconexionEnCurso) return;
+    reconexionEnCurso = true;
+
+    const nuevaConexion = mysql.createConnection({
+        host: process.env.DB_HOST,
+        port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306,
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        database: process.env.DB_NAME,
+        ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: true } : undefined
+    });
+
+    nuevaConexion.on('error', err => {
         console.error("ERROR DE CONEXIÓN DB:", err.message);
-        process.exit(1);
-    } else {
+        if (err.fatal) {
+            if (db === nuevaConexion) db = null;
+            reconexionEnCurso = false;
+            setTimeout(conectarBaseDatos, 1000);
+        }
+    });
+
+    nuevaConexion.connect(err => {
+        reconexionEnCurso = false;
+        if (err) {
+            console.error("ERROR DE CONEXIÓN DB:", err.message);
+            return setTimeout(conectarBaseDatos, 1000);
+        }
+        db = nuevaConexion;
         console.log("Conectado a db_juguetes perfectamente");
-    }
-});
+    });
+}
+
+conectarBaseDatos();
 
 app.get('/usuarios', (req, res) => {
     db.query('SELECT * FROM cat_usuarios', (err, result) => {
