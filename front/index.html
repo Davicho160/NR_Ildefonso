@@ -99,10 +99,29 @@
                             </select>
                         </div>
                         <div class="col-md-3 text-md-end">
-                            <div class="text-muted xsmall fw-bold">TOTAL SUMADO:</div>
+                            <div class="text-muted xsmall fw-bold">{{filtro.usuario ? 'TOTAL DEL VENDEDOR:' : 'TOTAL SUMADO:'}}</div>
                             <div class="total-badge">$ {{totalSumado}}</div>
                         </div>
                     </div>
+                </div>
+
+                <div v-if="!filtro.usuario && ventasPorUsuario.length" class="table-responsive bg-white rounded shadow-sm border mb-3">
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Vendedor</th>
+                                <th class="text-end">Registros</th>
+                                <th class="text-end pe-4">Suma de ventas</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="resumen in ventasPorUsuario" :key="resumen.usuario">
+                                <td>{{resumen.usuario}}</td>
+                                <td class="text-end">{{resumen.cantidad}}</td>
+                                <td class="fw-bold text-success text-end pe-4">$ {{resumen.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}}</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
 
                 <div class="table-responsive bg-white rounded shadow-sm border" style="max-height: 550px; overflow-y: auto;">
@@ -401,6 +420,16 @@
                 totalSumado() {
                     const total = this.ventas.reduce((acc, v) => acc + parseFloat(v.precio_venta || 0), 0);
                     return total.toLocaleString('en-US', { minimumFractionDigits: 2 });
+                },
+                ventasPorUsuario() {
+                    const resumen = this.ventas.reduce((acumulado, venta) => {
+                        const usuario = venta.usuario || 'Sin usuario';
+                        if (!acumulado[usuario]) acumulado[usuario] = { usuario, cantidad: 0, total: 0 };
+                        acumulado[usuario].cantidad++;
+                        acumulado[usuario].total += Number(venta.precio_venta) || 0;
+                        return acumulado;
+                    }, {});
+                    return Object.values(resumen).sort((a, b) => a.usuario.localeCompare(b.usuario));
                 },
                 totalMovimientosFiltrados() {
                     const total = this.movimientos.reduce((acc, movimiento) => acc + parseFloat(movimiento.movimiento || 0), 0);

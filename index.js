@@ -284,7 +284,7 @@ app.get('/ventas', (req, res) => {
         params.push(usuario);
     }
     
-    sql += " ORDER BY fecha_venta,usuario DESC, id_tb_juguetes_detalle DESC";
+    sql += " ORDER BY id_tb_juguetes_detalle DESC";
 
     db.query(sql, params, (err, result) => {
         if (err) {
