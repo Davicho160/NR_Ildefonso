@@ -5,6 +5,7 @@
     <title>Sistema Juguetes - Ventas</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
@@ -31,6 +32,9 @@
             </li>
             <li class="nav-item">
                 <button class="nav-link" :class="{ active: vistaActual === 'gastos' }" @click="cambiarVista('gastos')">Gastos</button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" :class="{ active: vistaActual === 'rendimiento' }" @click="cambiarVista('rendimiento')">Rendimiento</button>
             </li>
             <li class="nav-item">
                 <button class="nav-link" :class="{ active: vistaActual === 'administracion' }" @click="cambiarVista('administracion')">Administración</button>
@@ -292,6 +296,63 @@
             </div>
         </div>
 
+        <div v-else-if="vistaActual === 'rendimiento'" class="row">
+            <div class="col-12">
+                <div class="card shadow-sm p-3 mb-3 border-0 bg-white">
+                    <div class="row align-items-end g-3">
+                        <div class="col-sm-4 col-lg-3">
+                            <label class="form-label xsmall fw-bold">Año</label>
+                            <select v-model="filtroRendimiento.anio" @change="actualizarGraficaRendimiento" class="form-select form-select-sm">
+                                <option value="">Todos los años</option>
+                                <option v-for="anio in aniosRendimiento" :key="anio" :value="String(anio)">{{anio}}</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-4 col-lg-3">
+                            <label class="form-label xsmall fw-bold">Mes</label>
+                            <select v-model="filtroRendimiento.mes" @change="actualizarGraficaRendimiento" class="form-select form-select-sm">
+                                <option value="">Todos los meses</option>
+                                <option v-for="(mes, indice) in nombresMeses" :key="mes" :value="String(indice + 1).padStart(2, '0')">{{mes}}</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-4 col-lg-3">
+                            <label class="form-label xsmall fw-bold">Usuario</label>
+                            <select v-model="filtroRendimiento.usuario" @change="actualizarGraficaRendimiento" class="form-select form-select-sm">
+                                <option value="">Todos los usuarios</option>
+                                <option v-for="u in usuarios" :key="u.usuario" :value="u.usuario">{{u.usuario}}</option>
+                            </select>
+                        </div>
+                        <div class="col-lg-3 text-lg-end text-muted xsmall" v-if="cargandoRendimiento">Actualizando datos...</div>
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        <div class="bg-white border rounded p-3 h-100">
+                            <div class="xsmall text-muted fw-bold">INGRESOS CAPTURADOS</div>
+                            <div class="fs-4 fw-bold text-success">{{formatearMoneda(totalesRendimiento.ingresos)}}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="bg-white border rounded p-3 h-100">
+                            <div class="xsmall text-muted fw-bold">GASTOS CAPTURADOS</div>
+                            <div class="fs-4 fw-bold text-danger">{{formatearMoneda(totalesRendimiento.gastos)}}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="bg-white border rounded p-3 h-100">
+                            <div class="xsmall text-muted fw-bold">BALANCE</div>
+                            <div class="fs-4 fw-bold" :class="totalesRendimiento.balance >= 0 ? 'text-primary' : 'text-danger'">{{formatearMoneda(totalesRendimiento.balance)}}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white border rounded shadow-sm p-3" style="height: 430px;">
+                    <canvas ref="graficaRendimiento" aria-label="Gráfica mensual de ingresos, gastos y balance" role="img"></canvas>
+                    <div v-if="!cargandoRendimiento && !resumenRendimiento.length" class="text-center text-muted py-3">No hay datos para los filtros seleccionados</div>
+                </div>
+            </div>
+        </div>
+
         <div v-else class="row">
             <div class="col-md-4">
                 <div class="card shadow-sm mb-4 border-0">
@@ -388,6 +449,11 @@
                     resumenUsuarios: [],
                     ventas: [],
                     movimientos: [],
+                    ventasRendimiento: [],
+                    movimientosRendimiento: [],
+                    graficaRendimientoInstancia: null,
+                    cargandoRendimiento: false,
+                    filtroRendimiento: { anio: '', mes: '', usuario: '' },
                     fechasConVentas: [],
                     fechasConMovimientos: [],
                     calendarios: [],
@@ -441,6 +507,48 @@
                 totalUsuariosSinMovimientos() {
                     return this.resumenUsuarios.reduce((total, usuario) => total + Number(usuario.total_ventas || 0), 0);
                 },
+                nombresMeses() {
+                    return ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+                },
+                aniosRendimiento() {
+                    const fechas = [
+                        ...this.ventasRendimiento.map(venta => this.fechaComoClave(venta.fecha_venta)),
+                        ...this.movimientosRendimiento.map(movimiento => this.fechaComoClave(movimiento.fecha_moviemiento))
+                    ];
+                    return [...new Set(fechas.filter(Boolean).map(fecha => Number(fecha.slice(0, 4))).filter(Number.isFinite))].sort((a, b) => b - a);
+                },
+                resumenRendimiento() {
+                    const agrupado = {};
+                    const agregar = (fecha, usuario, tipo, importe) => {
+                        const claveFecha = this.fechaComoClave(fecha);
+                        if (!claveFecha || (this.filtroRendimiento.anio && claveFecha.slice(0, 4) !== this.filtroRendimiento.anio) || (this.filtroRendimiento.mes && claveFecha.slice(5, 7) !== this.filtroRendimiento.mes) || (this.filtroRendimiento.usuario && usuario !== this.filtroRendimiento.usuario)) return;
+                        const clave = claveFecha.slice(0, 7);
+                        if (!agrupado[clave]) agrupado[clave] = { clave, ingresos: 0, gastos: 0 };
+                        agrupado[clave][tipo] += Number(importe) || 0;
+                    };
+
+                    this.ventasRendimiento.forEach(venta => agregar(venta.fecha_venta, venta.usuario, 'ingresos', venta.precio_venta));
+                    this.movimientosRendimiento.forEach(movimiento => {
+                        const tipo = String(movimiento.tipo_movimiento || '').trim().toLowerCase();
+                        if (tipo === 'ingreso') agregar(movimiento.fecha_moviemiento, movimiento.usuario, 'ingresos', movimiento.movimiento);
+                        if (tipo === 'gasto') agregar(movimiento.fecha_moviemiento, movimiento.usuario, 'gastos', movimiento.movimiento);
+                    });
+
+                    return Object.values(agrupado).sort((a, b) => a.clave.localeCompare(b.clave)).map(mes => ({
+                        ...mes,
+                        balance: mes.ingresos - mes.gastos,
+                        etiqueta: this.filtroRendimiento.anio
+                            ? this.nombresMeses[Number(mes.clave.slice(5, 7)) - 1]
+                            : `${this.nombresMeses[Number(mes.clave.slice(5, 7)) - 1].slice(0, 3)} ${mes.clave.slice(0, 4)}`
+                    }));
+                },
+                totalesRendimiento() {
+                    return this.resumenRendimiento.reduce((total, mes) => ({
+                        ingresos: total.ingresos + mes.ingresos,
+                        gastos: total.gastos + mes.gastos,
+                        balance: total.balance + mes.balance
+                    }), { ingresos: 0, gastos: 0, balance: 0 });
+                },
                 usuariosConMovimiento() {
                     return [...new Set(this.movimientos.map(movimiento => movimiento.usuario).filter(Boolean))];
                 },
@@ -466,6 +574,10 @@
             },
             methods: {
                 cambiarVista(vista) {
+                    if (this.vistaActual === 'rendimiento' && vista !== 'rendimiento' && this.graficaRendimientoInstancia) {
+                        this.graficaRendimientoInstancia.destroy();
+                        this.graficaRendimientoInstancia = null;
+                    }
                     this.vistaActual = vista;
                     if (vista === 'ventas') {
                         this.$nextTick(() => {
@@ -486,6 +598,53 @@
                             this.obtenerFechasConMovimientos();
                         });
                     }
+                    if (vista === 'rendimiento') this.obtenerDatosRendimiento();
+                },
+
+                async obtenerDatosRendimiento() {
+                    this.cargandoRendimiento = true;
+                    try {
+                        const [ventas, movimientos] = await Promise.all([
+                            axios.get('http://localhost:3001/ventas'),
+                            axios.get('http://localhost:3001/movimientos')
+                        ]);
+                        this.ventasRendimiento = ventas.data;
+                        this.movimientosRendimiento = movimientos.data;
+                        await this.$nextTick();
+                        this.actualizarGraficaRendimiento();
+                    } catch (error) {
+                        console.error('Error consultando datos de rendimiento:', error);
+                    } finally {
+                        this.cargandoRendimiento = false;
+                    }
+                },
+
+                actualizarGraficaRendimiento() {
+                    if (!this.$refs.graficaRendimiento || typeof Chart === 'undefined') return;
+                    const datos = this.resumenRendimiento;
+                    if (this.graficaRendimientoInstancia) this.graficaRendimientoInstancia.destroy();
+                    this.graficaRendimientoInstancia = new Chart(this.$refs.graficaRendimiento, {
+                        data: {
+                            labels: datos.map(mes => mes.etiqueta),
+                            datasets: [
+                                { type: 'bar', label: 'Ingresos', data: datos.map(mes => mes.ingresos), backgroundColor: '#198754', borderRadius: 3 },
+                                { type: 'bar', label: 'Gastos', data: datos.map(mes => mes.gastos), backgroundColor: '#dc3545', borderRadius: 3 },
+                                { type: 'line', label: 'Balance', data: datos.map(mes => mes.balance), borderColor: '#0d6efd', backgroundColor: '#0d6efd', pointRadius: 3, tension: 0.25 }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: { mode: 'index', intersect: false },
+                            scales: {
+                                y: { beginAtZero: true, ticks: { callback: valor => '$' + Number(valor).toLocaleString('en-US') } }
+                            },
+                            plugins: {
+                                legend: { position: 'bottom' },
+                                tooltip: { callbacks: { label: contexto => `${contexto.dataset.label}: ${this.formatearMoneda(contexto.raw)}` } }
+                            }
+                        }
+                    });
                 },
 
                 fechaComoClave(fecha) {
